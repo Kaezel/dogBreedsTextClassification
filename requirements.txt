@@ -3,6 +3,7 @@
 pandas
 torch
 streamlit
-sentence-transformers
-huggingface-hub
 numpy
+sentence-transformers==5.1.2
+transformers==4.57.0
+huggingface-hub==0.35.3
