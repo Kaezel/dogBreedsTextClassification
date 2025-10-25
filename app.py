@@ -5,7 +5,7 @@
 # - Model & index hanya diload saat halaman BreedFinder
 
 import base64, re, unicodedata
-from huggingface_hub import snapshot_download
+from huggingface_hub import hf_hub_download
 from pathlib import Path
 import json, html
 
@@ -17,8 +17,7 @@ from sentence_transformers import SentenceTransformer
 # -------------------------
 # Paths & constants
 # -------------------------
-HF_REPO_ID = "Kaezel/dogBreedsTextClassification"  # <- punyamu
-CACHE_ROOT = Path("hf_cache")  # cache lokal agar cepat rerun
+REPO_ID = "Kaezel/dogBreedsTextClassification"  # <- punyamu
 
 HERE = Path(__file__).parent.resolve()
 ASSETS_DIR = HERE / "assets"
@@ -285,32 +284,31 @@ def render_card(name: str, score: float, prob: float | None):
 # ----- model & inference (lazy load) -----
 @st.cache_resource
 def load_assets():
-    # Unduh snapshot satu kali (cached oleh HF + cache lokal)
-    local_dir = snapshot_download(
-        repo_id=HF_REPO_ID,
-        repo_type="model",
-        local_dir=CACHE_ROOT,
-        local_dir_use_symlinks=False,
-        ignore_patterns=[".git/*", ".gitattributes"]
-    )
+    # model langsung dari repo HF kamu (akan dicache)
+    model = SentenceTransformer(REPO_ID)
 
-    base = Path(local_dir)
-    model_dir = _find_model_dir(base)
-    index_dir = _find_index_dir(base)
+    # unduh file index per-file
+    labels_path = hf_hub_download(REPO_ID, filename="index_proto_ce_v1/labels.txt")
+    protos_path = hf_hub_download(REPO_ID, filename="index_proto_ce_v1/prototypes.npy")
+    temp_path   = hf_hub_download(REPO_ID, filename="temperature.json", local_files_only=False)
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = SentenceTransformer(str(model_dir), device=device)
-
-    proto_np = np.load(index_dir / "prototypes.npy")
+    labels = [ln.strip() for ln in open(labels_path, encoding="utf-8").read().splitlines() if ln.strip()]
+    proto_np = np.load(protos_path)
     if proto_np.dtype != np.float32:
         proto_np = proto_np.astype(np.float32)
     proto = torch.from_numpy(proto_np).to(model.device)
     proto = torch.nn.functional.normalize(proto, p=2, dim=1)
 
-    labels = (index_dir / "labels.txt").read_text(encoding="utf-8").splitlines()
-    labels = [ln.strip() for ln in labels if ln.strip()]
+    # baca T dan scale (kalau ada)
+    T, scale = None, None
+    try:
+        import json
+        tj = json.load(open(temp_path, "r"))
+        T = float(tj.get("T")) if "T" in tj else None
+        scale = float(tj.get("scale")) if "scale" in tj else None
+    except Exception:
+        pass
 
-    T, scale = _read_temperature(base)  # aman jika None
     return model, proto, labels, T, scale
 
 def predict_top4(model, proto, labels, text: str, T=None, scale=None):
