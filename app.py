@@ -4,14 +4,9 @@
 # - BreedFinder (textarea + tombol kirim + hasil di atas form)
 # - Model & index hanya diload saat halaman BreedFinder
 
-import base64, re, unicodedata
+import base64, re, unicodedata, json, html, torch, numpy as np, streamlit as st
 from huggingface_hub import hf_hub_download
 from pathlib import Path
-import json, html
-
-import numpy as np
-import streamlit as st
-import torch
 from sentence_transformers import SentenceTransformer
 
 # -------------------------
@@ -284,30 +279,49 @@ def render_card(name: str, score: float, prob: float | None):
 # ----- model & inference (lazy load) -----
 @st.cache_resource
 def load_assets():
-    # model langsung dari repo HF kamu (akan dicache)
-    model = SentenceTransformer(REPO_ID)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # unduh file index per-file
-    labels_path = hf_hub_download(REPO_ID, filename="index_proto_ce_v1/labels.txt")
-    protos_path = hf_hub_download(REPO_ID, filename="index_proto_ce_v1/prototypes.npy")
-    temp_path   = hf_hub_download(REPO_ID, filename="temperature.json", local_files_only=False)
+    # 1) Load model dari subfolder repo (bukan root)
+    model = SentenceTransformer(
+        REPO_ID,
+        subfolder="mpnet_proto_ce_v1",
+        device=device
+    )
 
-    labels = [ln.strip() for ln in open(labels_path, encoding="utf-8").read().splitlines() if ln.strip()]
-    proto_np = np.load(protos_path)
+    # 2) Unduh index per file dari subfolder index
+    labels_fp = hf_hub_download(
+        REPO_ID, filename="labels.txt", subfolder="index_proto_ce_v1"
+    )
+    protos_fp = hf_hub_download(
+        REPO_ID, filename="prototypes.npy", subfolder="index_proto_ce_v1"
+    )
+
+    # 3) Baca index
+    with open(labels_fp, "r", encoding="utf-8") as f:
+        labels = [ln.strip() for ln in f if ln.strip()]
+
+    proto_np = np.load(protos_fp)
     if proto_np.dtype != np.float32:
         proto_np = proto_np.astype(np.float32)
     proto = torch.from_numpy(proto_np).to(model.device)
     proto = torch.nn.functional.normalize(proto, p=2, dim=1)
 
-    # baca T dan scale (kalau ada)
+    # 4) Kalibrasi (opsional)
     T, scale = None, None
     try:
-        import json
-        tj = json.load(open(temp_path, "r"))
+        temp_fp = hf_hub_download(REPO_ID, filename="temperature.json")
+        with open(temp_fp, "r", encoding="utf-8") as f:
+            tj = json.load(f)
         T = float(tj.get("T")) if "T" in tj else None
-        scale = float(tj.get("scale")) if "scale" in tj else None
+        scale = float(tj.get("scale")) if "scale" in tj else None  # boleh tidak ada
     except Exception:
-        pass
+        pass  # tidak apa-apa, fallback ke skor kemiripan saja
+
+    # Safety: pastikan sinkron
+    if proto.shape[0] != len(labels):
+        raise RuntimeError(
+            f"Mismatch index: prototypes={proto.shape[0]} vs labels={len(labels)}"
+        )
 
     return model, proto, labels, T, scale
 
