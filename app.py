@@ -35,34 +35,6 @@ st.set_page_config(
     layout="wide",
 )
 
-st.markdown(f"""
-<style>
-:root {{
-  --bg: {BG_NAV};
-  --panel: {BG_CARD};
-  --txt: {TXT};
-}}
-html, body, [data-testid="stAppViewContainer"] {{
-  background-color: var(--bg) !important;
-  color: var(--txt) !important;
-}}
-/* sidebar (kalau dipakai) */
-[data-testid="stSidebar"] > div:first-child {{
-  background: var(--panel) !important;
-}}
-/* pastikan semua markdown text ikut warna */
-[data-testid="stMarkdownContainer"] p, 
-[data-testid="stMarkdownContainer"] h1,
-[data-testid="stMarkdownContainer"] h2,
-[data-testid="stMarkdownContainer"] h3,
-[data-testid="stMarkdownContainer"] h4,
-[data-testid="stMarkdownContainer"] h5,
-[data-testid="stMarkdownContainer"] h6 {{
-  color: var(--txt) !important;
-}}
-</style>
-""", unsafe_allow_html=True)
-
 # -------------------------
 # Session state
 # -------------------------
