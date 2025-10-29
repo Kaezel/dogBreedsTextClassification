@@ -169,7 +169,7 @@ def hero_landing():
                     unsafe_allow_html=True
                 )
 
-            st.markdown('<div class="t2b-hero-title">Dari Teks ke Ras</div>', unsafe_allow_html=True)
+            st.markdown('<div class="t2b-hero-title">Dari Teks ke Ras Anjing</div>', unsafe_allow_html=True)
             st.markdown('<div class="t2b-hero-sub">Tanpa foto pun bisa. Cukup tulis ciri fisik atau kepribadiannya, kami bantu cari rasnya.</div>', unsafe_allow_html=True)
             st.write("")
             go = st.button("Temukan Ras", key="cta_btn")
