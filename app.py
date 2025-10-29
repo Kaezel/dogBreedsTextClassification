@@ -17,6 +17,7 @@ REPO_ID = "Kaezel/dogBreedsTextClassification"  # <- punyamu
 HERE = Path(__file__).parent.resolve()
 ASSETS_DIR = HERE / "assets"
 LOGO = ASSETS_DIR / "logo_new_nobg.png"
+BG = ASSETS_DIR / "bg.png"
 DOGIMG_DIR = ASSETS_DIR / "dogImg"
 
 TOP_K = 4
@@ -50,40 +51,19 @@ def _img_b64(p: Path) -> str:
     except Exception:
         return ""
 
-def _find_model_dir(base: Path) -> Path:
-    # cari folder yg berisi 'modules.json' (format SentenceTransformer.save)
-    for p in base.rglob("modules.json"):
-        return p.parent
-    # fallback: ada config.json + pytorch_model.bin
-    for p in base.rglob("pytorch_model.bin"):
-        return p.parent
-    raise FileNotFoundError("Folder model (modules.json / pytorch_model.bin) tidak ditemukan.")
-
-def _find_index_dir(base: Path) -> Path:
-    # cari prototypes.npy + labels.txt
-    protos = list(base.rglob("prototypes.npy"))
-    labels = list(base.rglob("labels.txt"))
-    if not protos or not labels:
-        raise FileNotFoundError("index (prototypes.npy/labels.txt) tidak ditemukan di repo HF.")
-    # pilih yang parentnya sama bila ada beberapa
-    for p in protos:
-        cand = p.parent
-        if (cand / "labels.txt").exists():
-            return cand
-    return protos[0].parent
-
-def _read_temperature(base: Path):
-    # bisa di root atau di subfolder; baca pertama yang ketemu
-    for p in [base / "temperature.json", *base.rglob("temperature.json")]:
-        if p.exists():
-            try:
-                j = json.loads(p.read_text(encoding="utf-8"))
-                T = float(j.get("T")) if "T" in j else None
-                scale = float(j.get("scale")) if "scale" in j else None
-                return T, scale
-            except Exception:
-                pass
-    return None, None
+def set_background_local(image_path: str, overlay_opacity: float = 0.55):
+    ext = Path(image_path).suffix.lower()
+    mime = "image/png" if ext == ".png" else ("image/webp" if ext == ".webp" else "image/jpeg")
+    with open(image_path, "rb") as f:
+        data = base64.b64encode(f.read()).decode("utf-8")
+    st.markdown(f"""
+    <style>
+    /* Latar belakang utama aplikasi */
+    [data-testid="stAppViewContainer"] {{
+      background: linear-gradient(rgba(0,0,0,{overlay_opacity}), rgba(0,0,0,{overlay_opacity})),
+                  url("data:{mime};base64,{data}") center/cover no-repeat fixed;
+    }}
+    """, unsafe_allow_html=True)
 
 def render_explainer_tip():
     tip = ("Kemiripan −1..1 (semakin besar semakin mirip). "
@@ -137,8 +117,8 @@ def hero_landing():
           min-height: 70vh;
           display: flex; align-items: center; justify-content: center;
       }}
-      .t2b-hero-title {{ color:{ACCENT}; font-size: 32px; font-weight: 800; margin: 18px 0 8px; }}
-      .t2b-hero-sub   {{ color:{TXT}; opacity:.9; line-height:1.6; font-size:18px; max-width:720px; }}
+      .t2b-hero-title {{ color:{ACCENT}; font-size: 40px; font-weight: 800; margin: 18px 0 8px; }}
+      .t2b-hero-sub   {{ color:{TXT}; opacity:.9; line-height:1.6; font-size:28px; max-width:720px; }}
 
       /* H1 brand — pakai !important agar tak ketimpa tema Streamlit */
       .t2b-brand-title {{
@@ -153,14 +133,14 @@ def hero_landing():
         st.markdown('<div class="t2b-hero-marker"></div>', unsafe_allow_html=True)
 
         # konten hero dipusatkan
-        center = st.columns([4, 6, 4])[1]
+        center = st.columns([3, 6, 3])[1]
 
         with center:
             # Baris brand: logo (150px) + title sejajar vertikal tengah
-            row = st.columns([2, 8], gap="small", vertical_alignment="center")
+            row = st.columns([3, 8], gap="small", vertical_alignment="center")
             with row[0]:
                 if LOGO.exists():
-                    st.image(str(LOGO), width=150)   # <-- sesuai permintaan
+                    st.image(str(LOGO), width=400)   # <-- sesuai permintaan
                 else:
                     st.write("🐾")
             with row[1]:
@@ -170,7 +150,7 @@ def hero_landing():
                 )
 
             st.markdown('<div class="t2b-hero-title">Dari Teks ke Ras Anjing</div>', unsafe_allow_html=True)
-            st.markdown('<div class="t2b-hero-sub">Tanpa foto pun bisa. Cukup tulis ciri fisik atau kepribadiannya, kami bantu cari rasnya.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="t2b-hero-sub">Silahkan tuliskan ciri fisik atau kepribadian dari anjing yang Anda inginkan, kami akan bantu menemukan rasnya.</div>', unsafe_allow_html=True)
             st.write("")
             go = st.button("Temukan Ras", key="cta_btn")
 
@@ -191,7 +171,7 @@ st.markdown(
         border-radius:12px; border:1px solid rgba(255,255,255,.06);
         margin-bottom:10px;
       }}
-      .t2b-name {{ color:{ACCENT}; font-weight:800; font-size:26px; margin:6px 0 2px; text-align:center; }}
+      .t2b-name {{ color:{ACCENT}; font-weight:800; font-size:28px; margin:6px 0 2px; text-align:center; }}
       .t2b-score {{ opacity:.9; text-align:center; font-size:14px; }}
       .t2b-center {{ max-width: 1000px; margin: 0 auto; }}
     </style>
@@ -224,7 +204,7 @@ st.markdown(
         border:6px solid transparent; border-top-color:#111;
       }}
       .t2b-footnote {{
-        margin-top:8px; opacity:.85; font-size:12px; display:flex; gap:6px; align-items:center;
+        margin-top:8px; opacity:.85; font-size:14px; display:flex; gap:6px; align-items:center;
       }}
     </style>
     """,
@@ -263,20 +243,25 @@ def _img_src_for(name: str) -> str:
 def render_card(name: str, score: float, prob: float | None):
     src = _img_src_for(name)
     prob_html = f'<div class="t2b-score">Probabilitas: {prob*100:.1f}%</div>' if prob is not None else ''
-    tip_txt = ("Kemiripan −1..1. Probabilitas = softmax((scale × kemiripan)/T).")
     st.markdown(
         f"""
         <div class="t2b-card">
-          <img src="{src}" alt="{name}" />
-          <div class="t2b-name">{name}</div>
-          {prob_html}
-          <div class="t2b-score">Skor kemiripan: {score:.3f}</div>
+            <img src="{src}" alt="{name}" />
+            <div class="t2b-name">{name}</div>
+            {prob_html}
+            <div class="t2b-score">Skor kemiripan: {score:.3f}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
+
 # ----- model & inference (lazy load) -----
+if st.session_state.get("stage") == "landing":
+    set_background_local("assets/bg3.jpeg", overlay_opacity=0.3)
+
+if st.session_state.get("stage") != "landing":
+    set_background_local("assets/bg4.png", overlay_opacity=0.9)
 @st.cache_resource
 def load_assets():
     # ambil hanya yang dibutuhkan
@@ -347,6 +332,59 @@ def predict_top4(model, proto, labels, text: str, T=None, scale=None):
 if st.session_state.stage == "landing":
     hero_landing()
 else:
+    st.markdown("""
+    <style>
+    div[data-testid="stLayoutWrapper"]:first-child {
+    background-color: #13161c;     /* dasar kartu */
+    border: 1px solid #2b313c;     /* garis */
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    }
+                
+    .stForm {
+    border: 0px;
+    padding: 0px;
+    }
+                
+    /* 1) “Berdasarkan deskripsi …” di dalam st.success */
+    [data-testid="stAlert"] > div {
+    background: transparent !important;
+    }
+    div.stAlert p { font-size: 20px; line-height: 1.5;}  /* naikin semua alert text */
+                
+    .t2b-successAlert{
+    background: #16a34a;              /* hijau solid 100% opacity */
+    color: #ffffff;                    /* teks putih */
+    border: 1px solid #11803b;         /* garis tipis */
+    border-radius: 12px;               /* rounded corners */
+    padding: 14px 18px;                /* ruang dalam */
+    font-size: 20px;
+    font-weight: 700;                  /* judul/teks tebal */
+    box-shadow: 0 4px 14px rgba(0,0,0,.25);
+    margin: 8px 0 50px;                /* jarak atas/bawah */
+    }
+
+    /* 2–3) Probabilitas & Skor kemiripan (pakai class di render_card) */
+    .t2b-prob, .t2b-score { font-size: 16px; line-height: 1.35; }
+
+    /* 4) Subjudul “Top-3 prediksi lainnya:” */
+    .t2b-subheading { font-size: 20px; font-weight: 700; margin: 8px 0 6px; }
+
+    /* 5) Label input (kalau pakai label custom + sembunyikan label bawaan) */
+    .t2b-input-label { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+
+    /* 6) Teks dan Placeholder di text_area */
+    div[data-testid="stTextArea"] textarea {
+        border: 2px solid gray;
+        font-size: 20px !important;
+        line-height: 1.5 !important;
+    }
+                
+    div[data-testid="stTextArea"] textarea::placeholder { font-size: 20px; opacity: .85; }
+    </style>
+    """, unsafe_allow_html=True)
+
     navbar()
     # BreedFinder page
     with st.spinner("Memuat model & index…"):
@@ -366,25 +404,33 @@ else:
         with st.form("t2b_form", clear_on_submit=False):
             col_text, col_btn = st.columns([12, 1], gap="small", vertical_alignment="center")
             with col_text:
+                st.markdown(
+                    '<div class="t2b-input-label">Silakan tuliskan ciri fisik atau kepribadian dari anjing yang Anda inginkan</div>',
+                    unsafe_allow_html=True
+                )
                 q = st.text_area(
-                    "Deskripsi",
+                    "",
+                    label_visibility="collapsed",
                     height=140,
                     placeholder=("Contoh: Anjing kecil, bulu keriting rapat tinggi 25-30cm berat 10kg, hipoalergenik, perlu grooming rutin "
-                                 "(Mohon input Bahasa Indonesia yang baku)"),
-                    label_visibility="collapsed",
+                                    "(Mohon input Bahasa Indonesia yang baku)"),
                 )
+                err_box = st.empty()
             with col_btn:
-                submitted = st.form_submit_button(" ", icon=":material/send:", use_container_width=True)
+                submitted = st.form_submit_button("Send", icon=":material/send:", use_container_width=True)
 
         # Validasi + Prediksi + Render
         if submitted:
             txt = (q or "").strip()
             words = [w for w in txt.split() if w.strip()]
             if not txt:
-                st.warning("Mohon input deskripsi", icon="⚠️")
+                err_box.error("Warning: Mohon input deskripsi!")
+                st.stop()
             elif len(words) < 5:
-                st.warning("Mohon input minimal 5 kata!", icon="⚠️")
+                err_box.error("Warning: Mohon input minimal 5 kata!")
+                st.stop()
             else:
+                err_box.empty()
                 with st.spinner("Menghitung kemiripan…"):
                     preds = predict_top4(model, proto, labels, txt, T=T, scale=scale)
 
@@ -392,6 +438,12 @@ else:
                     if not preds:
                         st.info("Tidak ada prediksi.")
                     else:
+                        st.markdown(
+                            '<div class="t2b-successAlert">'
+                            'Success: Berdasarkan deskripsi yang Anda masukkan, didapatkan ras-ras berikut yang mendekati deskripsi Anda.'
+                            '</div>',
+                            unsafe_allow_html=True
+                        )
                         # Main card center
                         c1, c2, c3 = st.columns([1, 1, 1], gap="large")
                         with c2:
@@ -401,7 +453,7 @@ else:
                         # Alternatif
                         if len(preds) > 1:
                             st.write("")
-                            st.markdown("**Top-3 prediksi lainnya:**")
+                            st.markdown('<div class="t2b-subheading">Top-3 prediksi lainnya:</div>', unsafe_allow_html=True)
                             g1, g2, g3 = st.columns(3, gap="large")
                             for item, col in zip(preds[1:4], [g1, g2, g3]):
                                 name, score, prob = item
