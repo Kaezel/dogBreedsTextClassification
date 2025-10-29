@@ -382,8 +382,8 @@ else:
             words = [w for w in txt.split() if w.strip()]
             if not txt:
                 st.warning("Mohon input deskripsi", icon="⚠️")
-            elif len(words) < 10:
-                st.warning("Mohon input minimal 10 kata!", icon="⚠️")
+            elif len(words) < 5:
+                st.warning("Mohon input minimal 5 kata!", icon="⚠️")
             else:
                 with st.spinner("Menghitung kemiripan…"):
                     preds = predict_top4(model, proto, labels, txt, T=T, scale=scale)
