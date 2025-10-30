@@ -261,7 +261,7 @@ if st.session_state.get("stage") == "landing":
     set_background_local("assets/bg3.jpeg", overlay_opacity=0.3)
 
 if st.session_state.get("stage") != "landing":
-    set_background_local("assets/bg4.png", overlay_opacity=0.9)
+    set_background_local("assets/bg4.png", overlay_opacity=0.8)
 @st.cache_resource
 def load_assets():
     # ambil hanya yang dibutuhkan
