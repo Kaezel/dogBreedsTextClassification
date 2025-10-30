@@ -417,7 +417,7 @@ else:
                 )
                 err_box = st.empty()
             with col_btn:
-                submitted = st.form_submit_button("Send", icon=":material/send:", use_container_width=True)
+                submitted = st.form_submit_button("", icon=":material/send:", use_container_width=True)
 
         # Validasi + Prediksi + Render
         if submitted:
