@@ -17,6 +17,7 @@ REPO_ID = "Kaezel/dogBreedsTextClassification"  # <- punyamu
 HERE = Path(__file__).parent.resolve()
 ASSETS_DIR = HERE / "assets"
 LOGO = ASSETS_DIR / "logo_new_nobg.png"
+LOGO_UNTAR = ASSETS_DIR / "logo_untar.png"
 BG = ASSETS_DIR / "bg.png"
 DOGIMG_DIR = ASSETS_DIR / "dogImg"
 
@@ -40,7 +41,7 @@ st.set_page_config(
 # Session state
 # -------------------------
 if "stage" not in st.session_state:
-    st.session_state.stage = "landing"   # "landing" | "finder"
+    st.session_state.stage = "landing"   # "landing" | "about" | "finder"
 
 # -------------------------
 # Utilities
@@ -152,11 +153,68 @@ def hero_landing():
             st.markdown('<div class="t2b-hero-title">Dari Teks ke Ras Anjing</div>', unsafe_allow_html=True)
             st.markdown('<div class="t2b-hero-sub">Silahkan tuliskan ciri fisik atau kepribadian dari anjing yang Anda inginkan, kami akan bantu menemukan rasnya.</div>', unsafe_allow_html=True)
             st.write("")
-            go = st.button("Temukan Ras", key="cta_btn")
 
-    if go:
-        st.session_state.stage = "finder"
-        st.rerun()
+    centerBtn = st.columns([3, 6, 3])[1]
+    with centerBtn:
+        rowBtn = st.columns([2, 10], gap="small", vertical_alignment="center")
+        with rowBtn[0]:
+            if st.button("Temukan Ras", key="cta_find"):
+                go("finder")
+        with rowBtn[1]:
+            if st.button("Tentang Kami", key="cta_about"):
+                go("about")
+
+
+# === [ADD] About section (mirip kartu besar dengan heading & paragraf) ===
+# [REPLACE] about_section() lama
+def about_section():
+    st.markdown(f"""
+    <style>
+      .t2b-about {{
+        background:{BG_CARD};
+        border-top:4px solid {ACCENT};
+        border-radius:16px; padding:30px; margin-top:18px;
+        box-shadow:0 8px 24px rgba(0,0,0,.12);
+      }}
+      .t2b-about-row{{
+        display:flex; align-items:center; gap:28px;
+      }}
+      .t2b-about-left{{ flex:6; }}
+      .t2b-about-left p{{ color:{TXT}; opacity:.92; font-size:22px; line-height:1.7; margin:0 0 10px 0; }}
+      .t2b-about-left h2{{ color:{ACCENT}; margin:0 0 12px 0; font-weight:800; }}
+      .t2b-about-right{{ flex:5; display:flex; justify-content:center; background: white; border-radius:16px; padding:30px; }}
+      .t2b-about-right img{{ max-width:100%; height:auto; border-radius:12px; }}
+      @media (max-width: 768px){{
+        .t2b-about-row{{ flex-direction:column-reverse; }}
+      }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    # siapkan src logo (base64) agar bisa disematkan di HTML
+    logo_src = f"data:image/png;base64,{_img_b64(LOGO_UNTAR)}" if LOGO_UNTAR.exists() else None
+
+    st.markdown(f"""
+    <div class="t2b-about">
+      <div class="t2b-about-row">
+        <div class="t2b-about-left">
+          <h2>Tentang Text2Breed</h2>
+          <p><b>Text2Breed</b> adalah platform untuk membantu menemukan ras anjing
+          yang paling mendekati berdasarkan <i>deskripsi naratif</i> pengguna. Platform ini dikembangkan oleh
+          Jafier Andreas, mahasiswa Teknik Informatika Universitas Tarumanagara, sebagai bagian dari tugas akhir.
+          Proyek ini dibimbing oleh Ibu Ir. Jeanny Pragantha, M.Eng. dan Bapak Henoch Juli Christanto, S.Kom., M.Kom.</p>
+          <p>Label mencakup <b>230</b> ras anjing yang diakui oleh organisasi anjing internasional yaitu
+          <i>Fédération Cynologique Internationale</i>.</p>
+        </div>
+        <div class="t2b-about-right">
+          {('<img src="'+logo_src+'" alt="Universitas Tarumanagara" />') if logo_src else '🐾'}
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def go(stage: str):
+    st.session_state.stage = stage
+    st.rerun()
 
 # ----- card CSS (shared) -----
 st.markdown(
@@ -257,10 +315,9 @@ def render_card(name: str, score: float, prob: float | None):
 
 
 # ----- model & inference (lazy load) -----
-if st.session_state.get("stage") == "landing":
+if st.session_state.get("stage") in ("landing","about"):
     set_background_local("assets/bg3.jpeg", overlay_opacity=0.3)
-
-if st.session_state.get("stage") != "landing":
+else:
     set_background_local("assets/bg4.png", overlay_opacity=0.8)
 @st.cache_resource
 def load_assets():
@@ -331,6 +388,12 @@ def predict_top4(model, proto, labels, text: str, T=None, scale=None):
 # -------------------------
 if st.session_state.stage == "landing":
     hero_landing()
+elif st.session_state.stage == "about":   # [ADD]
+    navbar()
+    if st.button("Kembali"):
+        go("landing")
+    about_section()
+
 else:
     st.markdown("""
     <style>
@@ -386,6 +449,8 @@ else:
     """, unsafe_allow_html=True)
 
     navbar()
+    if st.button("Kembali"):
+        go("landing")
     # BreedFinder page
     with st.spinner("Memuat model & index…"):
         model, proto, labels, T, scale = load_assets()
@@ -405,7 +470,7 @@ else:
             col_text, col_btn = st.columns([12, 1], gap="small", vertical_alignment="center")
             with col_text:
                 st.markdown(
-                    '<div class="t2b-input-label">Silakan tuliskan ciri fisik atau kepribadian dari anjing yang Anda inginkan</div>',
+                    '<div class="t2b-input-label">Silahkan tuliskan ciri fisik atau kepribadian dari anjing yang Anda inginkan</div>',
                     unsafe_allow_html=True
                 )
                 q = st.text_area(
