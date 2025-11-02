@@ -64,12 +64,6 @@ def set_background_local(image_path: str, overlay_opacity: float = 0.55):
       background: linear-gradient(rgba(0,0,0,{overlay_opacity}), rgba(0,0,0,{overlay_opacity})),
                   url("data:{mime};base64,{data}") center/cover no-repeat fixed;
     }}
-    @media (max-width: 820px), (hover: none) and (pointer: coarse) {{
-            [data-testid="stAppViewContainer"] {{
-            background-attachment: scroll !important;
-            background-position: center top !important;
-            }}
-    }}
     """, unsafe_allow_html=True)
 
 def render_explainer_tip():
