@@ -111,14 +111,14 @@ def navbar():
     )
 
 def hero_landing():
-    st.markdown("""
-@media (max-width: 820px), (hover: none) and (pointer: coarse) {
-        [data-testid="stAppViewContainer"] {
+    st.markdown(f"""
+    @media (max-width: 820px), (hover: none) and (pointer: coarse) {{
+            [data-testid="stAppViewContainer"] {{
             background-attachment: scroll !important;
             background-position: center top !important;
-        }
-        }
-""", unsafe_allow_html=True)
+            }}
+    }}
+    """, unsafe_allow_html=True)
     
     st.markdown(f"""
     <style>
