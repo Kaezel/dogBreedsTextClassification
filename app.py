@@ -598,6 +598,7 @@ else:
                     # Main card center
                     c1, c2, c3 = st.columns([1, 1, 1], gap="large")
                     with c2:
+                        st.markdown('<div class="t2b-subheading">Top-1 prediksi:</div>', unsafe_allow_html=True)
                         name, score, prob = preds[0]
                         render_card(name, score, prob)
 
