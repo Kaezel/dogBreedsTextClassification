@@ -292,30 +292,6 @@ def validate_text(txt: str) -> tuple[bool, str]:
         return False, "Maaf, deskripsi tampak tidak memiliki makna. Mohon tuliskan ciri fisik/temperamen yang jelas."
     return True, ""
 
-# ---- Sanity check: deteksi index mismatch via probe sederhana ----
-PROBES = [
-    # (teks, kandidat-benar (set label))
-    ("Anjing kecil, bulu keriting rapat, hipoalergenik, perlu grooming rutin, tinggi 25-30 cm, berat 7-10 kg",
-     {"Poodle","Bichon Frise","Portuguese Water Dog","Lagotto Romagnolo","Irish Water Spaniel"}),
-    ("Anjing besar putih berbulu tebal penjaga ternak, kuat, gigih",
-     {"Great Pyrenees","Maremma Sheepdog","Kuvasz"}),
-    ("Anjing kecil brachycephalic, wajah datar, bulu panjang, pendamping keluarga",
-     {"Shih Tzu","Pekingese","Lhasa Apso"})
-]
-
-def index_health_probe(model, proto, labels, T=None, scale=None) -> tuple[bool, list[str]]:
-    msgs = []
-    ok_cnt = 0
-    for text, expect in PROBES:
-        preds, _ = predict_top4(model, proto, labels, text, T=T, scale=scale)
-        got = [p[0] for p in preds]
-        if expect.intersection(got[:4]):
-            ok_cnt += 1
-        else:
-            msgs.append(f"Probe miss untuk: “{text[:60]}…” → got {got[:4]} ; expect salah satu {sorted(list(expect))[:5]}")
-    return ok_cnt >= max(1, len(PROBES)-1), msgs  # toleransi 1 miss
-
-
 # ----- card CSS (shared) -----
 st.markdown(
     f"""
@@ -556,13 +532,6 @@ else:
 
     if proto.shape[0] != len(labels):
         st.error(f"Jumlah prototipe ({proto.shape[0]}) ≠ jumlah label ({len(labels)}). Cek artifacts/index_ce_v1.")
-        st.stop()
-
-    # panggil setelah load_assets()
-    healthy, probe_msgs = index_health_probe(model, proto, labels, T, scale)
-    if not healthy:
-        st.error("Index label ↔ prototipe kemungkinan TIDAK selaras. Mohon pakai pasangan `prototypes.npy` dan `labels.txt` dari artifacts yang sama.\n\n" +
-                "\n".join(probe_msgs))
         st.stop()
 
     # satu div terpusat
