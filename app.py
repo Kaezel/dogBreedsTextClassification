@@ -12,7 +12,7 @@ from sentence_transformers import SentenceTransformer
 # -------------------------
 # Paths & constants
 # -------------------------
-REPO_ID = "Kaezel/dogBreedsTextClassification"  # <- punyamu
+REPO_ID = "Kaezel/dogBreedsTextClassification2"  # <- punyamu
 
 HERE = Path(__file__).parent.resolve()
 ASSETS_DIR = HERE / "assets"
@@ -216,6 +216,106 @@ def go(stage: str):
     st.session_state.stage = stage
     st.rerun()
 
+# ===== [ADD] Konstanta ambang & pesan panduan =====
+from types import SimpleNamespace
+
+CONF = SimpleNamespace(
+    MIN_SIM=0.52,      # top-1 cosine similarity minimal
+    MIN_PROB=0.15,     # top-1 probability minimal (butuh T & scale)
+)
+
+GUIDE_GENERAL = (
+    "Deskripsi tampak belum spesifik. Mohon tambahkan detail seperti tinggi/berat (cm/kg), "
+    "tekstur & warna bulu, bentuk telinga/moncong, dan temperamen."
+)
+
+GUIDE_AMBIG = (
+    "Beberapa ras memiliki kemiripan yang hampir setara. Mohon tambahkan ciri pembeda yang lebih khas, "
+    "misalnya bentuk telinga (tegak/menjuntai/setengah), bentuk moncong (pendek/panjang), "
+    "panjang & tekstur bulu (pendek/panjang/kasar/keriting), pola warna spesifik "
+    "(merle/brindle/sable/tricolor, mask/blaze/white markings), ukuran dewasa (tinggi cm, berat kg), "
+    "ciri ekor (panjang/keriting/melengkung/carriage), tujuan/asal ras (gembala, penjaga, pemburu, companion), "
+    "atau tingkat energi & kebutuhan latihan."
+)
+
+# ===== [ADD] Gate low-confidence yang konsisten =====
+def gate_prediction(sims: torch.Tensor, topv: torch.Tensor, topi: torch.Tensor,
+                    T: float | None, scale: float | None) -> dict:
+    """
+    Mengembalikan diagnostic:
+      - low_conf: bool -> perlu tampilkan peringatan
+      - reasons: list[str] -> alasan yang memicu
+      - top1_sim, top1_prob, margin, entropy (angka-angka ringkas)
+    """
+    top1_sim = float(topv[0])
+    top1_prob = None
+
+    # Prob/entropy hanya jika kalibrasi tersedia
+    if (T is not None) and (scale is not None):
+        logits = (scale * sims) / float(T)
+        probs  = torch.softmax(logits, dim=0)
+        top1_prob = float(probs[topi[0]])
+
+    # Cek syarat low-confidence
+    cause, msg = None, None
+    if top1_sim < CONF.MIN_SIM:
+        cause, msg = "low_sim", GUIDE_GENERAL
+    elif (top1_prob is not None) and (top1_prob < CONF.MIN_PROB):
+        cause, msg = "ambiguous", GUIDE_AMBIG
+    
+    return {
+        "low_conf": cause is not None,
+        "cause": cause,
+        "msg": msg,
+        "top1_sim": top1_sim,
+        "top1_prob": top1_prob,
+    }
+
+def looks_like_gibberish(txt: str) -> bool:
+    t = re.sub(r"[^a-zA-Z0-9\s]", " ", txt).lower()
+    tokens = [w for w in t.split() if len(w) >= 3]
+    if not tokens:
+        return True
+    # 1) cukup vokal di token
+    if sum(1 for w in tokens if re.search(r"[aiueo]", w)) / len(tokens) < 0.5:
+        return True
+    # 2) keyboard-mash umum
+    if re.search(r"\b(?:asd|asdf|qwe|qwer|zxc|jkl|lkj|dfg)\w*\b", t):
+        return True
+    # 3) pengulangan huruf ekstrem
+    if re.search(r"(.)\1\1\1+", t):
+        return True
+    return False
+
+def validate_text(txt: str) -> tuple[bool, str]:
+    if looks_like_gibberish(txt):
+        return False, "Maaf, deskripsi tampak tidak memiliki makna. Mohon tuliskan ciri fisik/temperamen yang jelas."
+    return True, ""
+
+# ---- Sanity check: deteksi index mismatch via probe sederhana ----
+PROBES = [
+    # (teks, kandidat-benar (set label))
+    ("Anjing kecil, bulu keriting rapat, hipoalergenik, perlu grooming rutin, tinggi 25-30 cm, berat 7-10 kg",
+     {"Poodle","Bichon Frise","Portuguese Water Dog","Lagotto Romagnolo","Irish Water Spaniel"}),
+    ("Anjing besar putih berbulu tebal penjaga ternak, kuat, gigih",
+     {"Great Pyrenees","Maremma Sheepdog","Kuvasz"}),
+    ("Anjing kecil brachycephalic, wajah datar, bulu panjang, pendamping keluarga",
+     {"Shih Tzu","Pekingese","Lhasa Apso"})
+]
+
+def index_health_probe(model, proto, labels, T=None, scale=None) -> tuple[bool, list[str]]:
+    msgs = []
+    ok_cnt = 0
+    for text, expect in PROBES:
+        preds, _ = predict_top4(model, proto, labels, text, T=T, scale=scale)
+        got = [p[0] for p in preds]
+        if expect.intersection(got[:4]):
+            ok_cnt += 1
+        else:
+            msgs.append(f"Probe miss untuk: “{text[:60]}…” → got {got[:4]} ; expect salah satu {sorted(list(expect))[:5]}")
+    return ok_cnt >= max(1, len(PROBES)-1), msgs  # toleransi 1 miss
+
+
 # ----- card CSS (shared) -----
 st.markdown(
     f"""
@@ -359,29 +459,28 @@ def load_assets():
 
     return model, proto, labels, T, scale
 
+# ===== [UPDATE] predict_top4 -> kembalikan prediksi + diagnostic =====
 def predict_top4(model, proto, labels, text: str, T=None, scale=None):
     if not text.strip():
-        return []
+        return [], None
     with torch.inference_mode():
         e = model.encode([text], convert_to_tensor=True, normalize_embeddings=True)
         sims = (e @ proto.T)[0]
         k = min(TOP_K, sims.shape[-1])
         topv, topi = torch.topk(sims, k=k)
 
-        probs = None
-        if (T is not None) and (scale is not None):
-            logits = (scale * sims) / float(T)
-            probs = torch.softmax(logits, dim=0)
-            top_probs = probs[topi]
+        diag = gate_prediction(sims, topv, topi, T, scale)
 
-            idxs = topi.detach().cpu().tolist()
-            vals = topv.detach().cpu().tolist()
-            prbs = top_probs.detach().cpu().tolist()
-            return [(labels[j], float(s), float(p)) for j, s, p in zip(idxs, vals, prbs)]
+        if (T is not None) and (scale is not None):
+            logits    = (scale * sims) / float(T)
+            probs_all = torch.softmax(logits, dim=0)
+            top_probs = probs_all[topi]
+            preds = [(labels[j], float(s), float(p))
+                     for j, s, p in zip(topi.tolist(), topv.tolist(), top_probs.tolist())]
         else:
-            idxs = topi.detach().cpu().tolist()
-            vals = topv.detach().cpu().tolist()
-            return [(labels[j], float(s), None) for j, s in zip(idxs, vals)]
+            preds = [(labels[j], float(s), None) for j, s in zip(topi.tolist(), topv.tolist())]
+
+        return preds, diag
 
 # -------------------------
 # Router
@@ -459,6 +558,13 @@ else:
         st.error(f"Jumlah prototipe ({proto.shape[0]}) ≠ jumlah label ({len(labels)}). Cek artifacts/index_ce_v1.")
         st.stop()
 
+    # panggil setelah load_assets()
+    healthy, probe_msgs = index_health_probe(model, proto, labels, T, scale)
+    if not healthy:
+        st.error("Index label ↔ prototipe kemungkinan TIDAK selaras. Mohon pakai pasangan `prototypes.npy` dan `labels.txt` dari artifacts yang sama.\n\n" +
+                "\n".join(probe_msgs))
+        st.stop()
+
     # satu div terpusat
     with st.container(gap="medium"):
         st.markdown('<div class="t2b-center">', unsafe_allow_html=True)
@@ -488,42 +594,53 @@ else:
         if submitted:
             txt = (q or "").strip()
             words = [w for w in txt.split() if w.strip()]
+
             if not txt:
                 err_box.error("Warning: Mohon input deskripsi!")
                 st.stop()
             elif len(words) < 5:
                 err_box.error("Warning: Mohon input minimal 5 kata!")
                 st.stop()
-            else:
-                err_box.empty()
-                with st.spinner("Menghitung kemiripan…"):
-                    preds = predict_top4(model, proto, labels, txt, T=T, scale=scale)
 
-                with results_box.container():
-                    if not preds:
-                        st.info("Tidak ada prediksi.")
-                    else:
-                        st.markdown(
-                            '<div class="t2b-successAlert">'
-                            'Success: Berdasarkan deskripsi yang Anda masukkan, didapatkan ras-ras berikut yang mendekati deskripsi Anda.'
-                            '</div>',
-                            unsafe_allow_html=True
-                        )
-                        # Main card center
-                        c1, c2, c3 = st.columns([1, 1, 1], gap="large")
-                        with c2:
-                            name, score, prob = preds[0]
-                            render_card(name, score, prob)
+            ok, msg = validate_text(txt)
+            if not ok:
+                err_box.warning(msg, icon="⚠️")
+                st.stop()
 
-                        # Alternatif
-                        if len(preds) > 1:
-                            st.write("")
-                            st.markdown('<div class="t2b-subheading">Top-3 prediksi lainnya:</div>', unsafe_allow_html=True)
-                            g1, g2, g3 = st.columns(3, gap="large")
-                            for item, col in zip(preds[1:4], [g1, g2, g3]):
-                                name, score, prob = item
-                                with col:
-                                    render_card(name, score, prob)
-                            render_explainer_tip()
+            err_box.empty()
+            with st.spinner("Menghitung kemiripan…"):
+                preds, diag = predict_top4(model, proto, labels, txt, T=T, scale=scale)
+
+            with results_box.container():
+                if not preds:
+                    st.info("Tidak ada prediksi.")
+                else:
+                    if diag and diag["low_conf"]:
+                        with st.container():
+                            st.warning(f"🤔 Prediksi kurang yakin: {diag['msg']}")
+
+                    st.markdown(
+                        '<div class="t2b-successAlert">'
+                        'Success: Berdasarkan deskripsi yang Anda masukkan, didapatkan ras-ras berikut yang mendekati deskripsi Anda.'
+                        '</div>',
+                        unsafe_allow_html=True
+                    )
+
+                    # Main card center
+                    c1, c2, c3 = st.columns([1, 1, 1], gap="large")
+                    with c2:
+                        name, score, prob = preds[0]
+                        render_card(name, score, prob)
+
+                    # Alternatif
+                    if len(preds) > 1:
+                        st.write("")
+                        st.markdown('<div class="t2b-subheading">Top-3 prediksi lainnya:</div>', unsafe_allow_html=True)
+                        g1, g2, g3 = st.columns(3, gap="large")
+                        for item, col in zip(preds[1:4], [g1, g2, g3]):
+                            name, score, prob = item
+                            with col:
+                                render_card(name, score, prob)
+                        render_explainer_tip()
 
         st.markdown('</div>', unsafe_allow_html=True)
