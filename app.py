@@ -12,7 +12,7 @@ from sentence_transformers import SentenceTransformer
 # -------------------------
 # Paths & constants
 # -------------------------
-REPO_ID = "Kaezel/dogBreedsTextClassification2"  # <- punyamu
+REPO_ID = "Kaezel/dogBreedsTextClassification"  # <- punyamu
 
 HERE = Path(__file__).parent.resolve()
 ASSETS_DIR = HERE / "assets"
@@ -202,7 +202,7 @@ def about_section():
           yang paling mendekati berdasarkan <i>deskripsi naratif</i> pengguna. Platform ini dikembangkan oleh
           Jafier Andreas, mahasiswa Teknik Informatika Universitas Tarumanagara, sebagai bagian dari tugas akhir.
           Proyek ini dibimbing oleh Ibu Ir. Jeanny Pragantha, M.Eng. dan Bapak Henoch Juli Christanto, S.Kom., M.Kom.</p>
-          <p>Label mencakup <b>230</b> ras anjing yang diakui oleh organisasi anjing internasional yaitu
+          <p>Label mencakup <b>332</b> ras anjing yang diakui oleh organisasi anjing internasional yaitu
           <i>Fédération Cynologique Internationale</i>.</p>
         </div>
         <div class="t2b-about-right">
