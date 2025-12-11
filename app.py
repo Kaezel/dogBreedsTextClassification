@@ -12,7 +12,7 @@ from sentence_transformers import SentenceTransformer
 # -------------------------
 # Paths & constants
 # -------------------------
-REPO_ID = "Kaezel/dogBreedsTextClassification"  # <- punyamu
+REPO_ID = "Kaezel/dogBreedsTextClassification2"  # <- punyamu
 
 HERE = Path(__file__).parent.resolve()
 ASSETS_DIR = HERE / "assets"
